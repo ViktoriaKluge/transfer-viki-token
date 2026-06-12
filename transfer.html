@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token Transfer</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: #f5f5f5;
+      gap: 1rem;
+      padding: 1rem;
+      text-align: center;
+    }
+    button {
+      font-size: 1.1rem;
+      padding: 0.8rem 1.5rem;
+      cursor: pointer;
+      border-radius: 8px;
+      border: none;
+      background: #4f46e5;
+      color: white;
+    }
+    button:hover {
+      background: #4338ca;
+    }
+    .result {
+      font-size: 1rem;
+      font-weight: bold;
+      max-width: 600px;
+      word-break: break-all;
+      min-height: 1.5rem;
+    }
+    .row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .info {
+      font-size: 0.9rem;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>ERC20 Token Transfer</h1>
+  <p class="info">
+    Recipient for both transfers:<br>
+    0x15433DA387451F9dE4565280C85506CB71aF9376
+  </p>
+
+  <div class="row">
+    <button id="vikiBtn">Send 10 VikiToken</button>
+    <div class="result" id="vikiResult"></div>
+  </div>
+
+  <div class="row">
+    <button id="whitelistBtn">Send 10 VikiWhitelistToken</button>
+    <div class="result" id="whitelistResult"></div>
+  </div>
+
+  <script type="module">
+    import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.0/+esm";
+
+    const erc20Abi = [
+      "function transfer(address to, uint256 amount) returns (bool)",
+      "function decimals() view returns (uint8)"
+    ];
+
+    const whitelistAbi = [
+      ...erc20Abi,
+      "function addToWhitelist(address account)"
+    ];
+
+    const VIKI_TOKEN_ADDRESS = "0x6F044F0A9eE790Dd0c13BFC9681eC047644E617C";
+    const VIKI_WHITELIST_TOKEN_ADDRESS = "0xd833A2037A12d4419641192c663f85e1d34Fbd3C";
+    const RECIPIENT = "0x15433DA387451F9dE4565280C85506CB71aF9376";
+    const AMOUNT = "10";
+
+    async function transferToken(contractAddress, resultElement) {
+      if (typeof window.ethereum === "undefined") {
+        resultElement.textContent = "MetaMask is not installed!";
+        return;
+      }
+
+      try {
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+
+        //chainId 11155111
+        const network = await provider.getNetwork();
+        if (network.chainId !== 11155111n) {
+          resultElement.textContent = "Please switch MetaMask to the Sepolia testnet.";
+          return;
+        }
+
+        const contract = new ethers.Contract(contractAddress, erc20Abi, signer);
+
+        const decimals = await contract.decimals();
+        const amountInUnits = ethers.parseUnits(AMOUNT, decimals);
+
+        resultElement.textContent = "Please confirm the transaction in MetaMask...";
+
+        const tx = await contract.transfer(RECIPIENT, amountInUnits);
+
+        resultElement.textContent = "Transaction sent! Hash: " + tx.hash + " (waiting for confirmation...)";
+
+        await tx.wait();
+
+        resultElement.textContent = "Transaction confirmed! Hash: " + tx.hash;
+
+      } catch (error) {
+        console.error(error);
+        resultElement.textContent = "Error: " + error.message;
+      }
+    }
+
+    async function transferWhitelistToken(contractAddress, resultElement) {
+      if (typeof window.ethereum === "undefined") {
+        resultElement.textContent = "MetaMask is not installed!";
+        return;
+      }
+
+      try {
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+
+        //chainId 11155111
+        const network = await provider.getNetwork();
+        if (network.chainId !== 11155111n) {
+          resultElement.textContent = "Please switch MetaMask to the Sepolia testnet.";
+          return;
+        }
+
+        const contract = new ethers.Contract(contractAddress, whitelistAbi, signer);
+
+        // Try to whitelist the recipient first (only works if caller is the contract owner)
+        try {
+          resultElement.textContent = "Ensuring recipient is whitelisted...";
+          const whitelistTx = await contract.addToWhitelist(RECIPIENT);
+          await whitelistTx.wait();
+        } catch (whitelistError) {
+          // Caller is likely not the owner - continue and let the transfer
+          // itself succeed or fail depending on whether the recipient is whitelisted
+          console.warn("Could not whitelist recipient (probably not the contract owner):", whitelistError);
+          resultElement.textContent = "Not the contract owner, skipping whitelist step. Attempting transfer...";
+        }
+
+        const decimals = await contract.decimals();
+        const amountInUnits = ethers.parseUnits(AMOUNT, decimals);
+
+        resultElement.textContent = "Please confirm the transfer transaction in MetaMask...";
+
+        const tx = await contract.transfer(RECIPIENT, amountInUnits);
+
+        resultElement.textContent = "Transaction sent! Hash: " + tx.hash + " (waiting for confirmation...)";
+
+        await tx.wait();
+
+        resultElement.textContent = "Transaction confirmed! Hash: " + tx.hash;
+
+      } catch (error) {
+        console.error(error);
+        resultElement.textContent = "Error: " + error.message;
+      }
+    }
+
+    document.getElementById("vikiBtn").addEventListener("click", () => {
+      transferToken(VIKI_TOKEN_ADDRESS, document.getElementById("vikiResult"));
+    });
+
+    document.getElementById("whitelistBtn").addEventListener("click", () => {
+      transferWhitelistToken(VIKI_WHITELIST_TOKEN_ADDRESS, document.getElementById("whitelistResult"));
+    });
+  </script>
+
+</body>
+</html>
